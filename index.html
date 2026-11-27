@@ -32,7 +32,7 @@
 
   <!-- Supabase JS Client v2 -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="supabase-client.js"></script>
+  <script src="supabase-client.js?v=2.5"></script>
 
   <style>
     /* =========================================================
@@ -1171,6 +1171,16 @@
       justify-items: center;
     }
 
+    .content-grid[data-count="1"] {
+      grid-template-columns: minmax(280px, 340px);
+      justify-content: center;
+    }
+
+    .content-grid[data-count="2"] {
+      grid-template-columns: repeat(2, minmax(280px, 340px));
+      justify-content: center;
+    }
+
     .content-card {
       position: relative;
       width: 100%;
@@ -1281,7 +1291,9 @@
     }
 
     @media (max-width: 600px) {
-      .content-grid {
+      .content-grid,
+      .content-grid[data-count="1"],
+      .content-grid[data-count="2"] {
         grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
         gap: 16px;
         padding: 8px 12px 16px;
@@ -3745,7 +3757,12 @@
           <img src="Images/k.png" alt="K" onerror="this.style.display='none';">
           <span>Khadija_Nd ✦</span>
         </div>
-        <button class="reel-close-btn" id="reelCloseBtn" aria-label="Fermer la vidéo">✕</button>
+        <div style="display:flex; align-items:center; gap:8px;">
+          <a href="#" target="_blank" rel="noopener noreferrer" id="reelExternalLinkBtn" class="reel-close-btn" title="Ouvrir la vidéo originale ↗" style="text-decoration:none; display:none;">
+            <i class="fa-solid fa-arrow-up-right-from-square" style="font-size:0.85rem;"></i>
+          </a>
+          <button class="reel-close-btn" id="reelCloseBtn" aria-label="Fermer la vidéo">✕</button>
+        </div>
       </div>
 
       <div class="reel-side-actions">
@@ -4392,15 +4409,16 @@
       }
       const ytId = extractYoutubeId(url);
       if (ytId) {
-        return `https://www.youtube.com/embed/${ytId}?autoplay=1&rel=0&playsinline=1&modestbranding=1`;
+        return `https://www.youtube.com/embed/${ytId}?autoplay=1&mute=1&playsinline=1&rel=0`;
       }
       const igMatch = url.match(/instagram\.com\/(?:reel|reels|p)\/([a-zA-Z0-9_-]+)/i);
       if (igMatch) {
         return `https://www.instagram.com/reel/${igMatch[1]}/embed/`;
       }
-      const tiktokMatch = url.match(/tiktok\.com\/(?:@[\w.-]+\/video\/|v\/|embed\/v2\/)(\d+)/i);
-      if (tiktokMatch) {
-        return `https://www.tiktok.com/embed/v2/${tiktokMatch[1]}`;
+      const tiktokIdMatch = url.match(/(?:video\/|v\/|player\/v1\/|embed\/v2\/)(\d{15,22})/i) ||
+        (url.includes('tiktok.com') && url.match(/(\d{18,21})/));
+      if (tiktokIdMatch) {
+        return `https://www.tiktok.com/player/v1/${tiktokIdMatch[1]}?autoplay=1&muted=1&description=1`;
       }
       const vimeoMatch = url.match(/(?:vimeo\.com\/|player\.vimeo\.com\/video\/)(\d+)/i);
       if (vimeoMatch) {
@@ -4431,6 +4449,11 @@
     async function renderContentGrid() {
       const grid = document.getElementById('contentGrid');
       allContents = await window.supabaseService.getContents();
+      if (!Array.isArray(allContents) || allContents.length === 0) {
+        allContents = window.supabaseService.getDefaultContents
+          ? window.supabaseService.getDefaultContents()
+          : [];
+      }
 
       const filtered = activeVideoFilter === "all"
         ? allContents
@@ -4439,7 +4462,13 @@
       grid.innerHTML = "";
       grid.dataset.count = filtered.length;
       if (filtered.length === 0) {
-        grid.innerHTML = '<div style="grid-column: 1 / -1; text-align:center; padding:50px 20px; color:var(--text-secondary); font-size:1rem;">Aucun format vidéo dans cette catégorie pour le moment ✦</div>';
+        const lang = localStorage.getItem(LANG_KEY) || "fr";
+        const emptyText = lang === 'en' ? "No videos in this category yet ✦" : "Aucun format vidéo dans cette catégorie pour le moment ✦";
+        const viewAllLabel = lang === 'en' ? "View all videos ✦" : "Voir toutes les vidéos ✦";
+        grid.innerHTML = `<div style="grid-column: 1 / -1; text-align:center; padding:50px 20px; color:var(--text-secondary); font-size:1rem;">
+          <p style="margin-bottom:14px;">${emptyText}</p>
+          <button type="button" class="filter-pill active" onclick="resetContentFilter()" style="margin:0 auto;">${viewAllLabel}</button>
+        </div>`;
         return;
       }
 
@@ -4457,6 +4486,11 @@
           const thumb = getVideoThumbnail(item);
           if (thumb) {
             mediaHtml = `<img src="${thumb}" alt="${item.caption || 'Vidéo Khadija_Nd'}" style="width:100%; height:100%; object-fit:cover; display:block;">`;
+          } else if (item.video && item.video.includes('tiktok')) {
+            mediaHtml = `<div style="width:100%; height:100%; display:flex; flex-direction:column; align-items:center; justify-content:center; background:linear-gradient(135deg, #010101 0%, #161823 100%); color:#FFF; padding:20px; text-align:center;">
+              <div style="font-size:2.8rem; margin-bottom:8px; color:#25F4EE;"><i class="fa-brands fa-tiktok"></i></div>
+              <span style="font-size:0.8rem; font-family:'Space Mono',monospace; letter-spacing:1px; opacity:0.9;">TIKTOK VIRAL</span>
+            </div>`;
           } else {
             mediaHtml = `<div style="width:100%; height:100%; display:flex; flex-direction:column; align-items:center; justify-content:center; background:linear-gradient(135deg, #2B1620 0%, #170910 100%); color:var(--gold); padding:20px; text-align:center;">
               <div style="font-size:2.4rem; margin-bottom:8px;"><i class="fa-solid fa-play"></i></div>
@@ -4513,6 +4547,16 @@
       observeReveals();
     }
 
+    function resetContentFilter() {
+      const allBtn = document.querySelector('#contentFiltersBar .filter-pill[data-filter="all"]');
+      if (allBtn) {
+        document.querySelectorAll('#contentFiltersBar .filter-pill').forEach(b => b.classList.remove('active'));
+        allBtn.classList.add('active');
+        activeVideoFilter = "all";
+        renderContentGrid();
+      }
+    }
+
     // Filtres Vidéos
     document.querySelectorAll('#contentFiltersBar .filter-pill').forEach(btn => {
       btn.addEventListener('click', () => {
@@ -4544,7 +4588,18 @@
       reelMediaSlot.innerHTML = "";
       reelLikeBtn.classList.remove('liked');
 
+      const extLinkBtn = document.getElementById('reelExternalLinkBtn');
+      if (extLinkBtn) {
+        if (item.video && (item.video.startsWith('http://') || item.video.startsWith('https://'))) {
+          extLinkBtn.href = item.video;
+          extLinkBtn.style.display = "flex";
+        } else {
+          extLinkBtn.style.display = "none";
+        }
+      }
+
       if (isDirectVideo(item.video)) {
+        reelMuteBtn.style.display = "flex";
         const vid = document.createElement('video');
         vid.src = item.video;
         vid.autoplay = true;
@@ -4565,10 +4620,13 @@
           vid.play().catch(() => { });
         });
       } else {
+        reelMuteBtn.style.display = "none";
         const embedUrl = formatEmbedUrl(item.video);
         const iframe = document.createElement('iframe');
         iframe.src = embedUrl;
-        iframe.allow = "autoplay; fullscreen; encrypted-media; picture-in-picture";
+        iframe.allow = "accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share";
+        iframe.allowFullscreen = true;
+        iframe.setAttribute('allowfullscreen', '');
         reelMediaSlot.appendChild(iframe);
         currentReelVideoEl = null;
       }
@@ -4688,6 +4746,11 @@
     async function renderGalleryGrid() {
       const grid = document.getElementById('galleryGrid');
       allGallery = await window.supabaseService.getGallery();
+      if (!Array.isArray(allGallery) || allGallery.length === 0) {
+        allGallery = window.supabaseService.getDefaultGallery
+          ? window.supabaseService.getDefaultGallery()
+          : [];
+      }
 
       currentGalleryFiltered = activeGalleryFilter === "all"
         ? allGallery
@@ -4864,7 +4927,12 @@
     /* ---------- 9. RUBAN COLLABS MARQUEE ---------- */
     async function renderCollabTrack() {
       const track = document.getElementById('collabTrack');
-      const collabsData = await window.supabaseService.getCollabs();
+      let collabsData = await window.supabaseService.getCollabs();
+      if (!Array.isArray(collabsData) || collabsData.length === 0) {
+        collabsData = window.supabaseService.getDefaultCollabs
+          ? window.supabaseService.getDefaultCollabs()
+          : [];
+      }
       track.innerHTML = "";
 
       if (collabsData.length === 0) {
@@ -4888,7 +4956,12 @@
       if (!grid) return;
 
       try {
-        const packs = await window.supabaseService.getPacks();
+        let packs = await window.supabaseService.getPacks();
+        if (!Array.isArray(packs) || packs.length === 0) {
+          packs = window.supabaseService.getDefaultPacks
+            ? window.supabaseService.getDefaultPacks()
+            : [];
+        }
         if (Array.isArray(packs) && packs.length > 0) {
           grid.innerHTML = packs.map(pack => {
             const isFeatured = Boolean(pack.popular);
