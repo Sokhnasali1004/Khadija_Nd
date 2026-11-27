@@ -25,7 +25,7 @@ const SUPABASE_STORAGE_KEYS = {
   localSimulator: "khadija_simulator_config_v1"
 };
 
-// Données initiales de secours (vides par défaut pour ne rien afficher sans ajout)
+// Données initiales de secours (vides par défaut pour l'admin)
 const INITIAL_FALLBACK_DATA = {
   contents: [],
   gallery: [],
@@ -181,6 +181,73 @@ const INITIAL_FALLBACK_DATA = {
   }
 };
 
+// Médias par défaut affichés sur la page d'accueil lorsque l'admin ne contient aucune vidéo/photo
+const DEFAULT_HOME_MEDIA = {
+  contents: [
+    {
+      id: "default_v1",
+      caption: "@khadija_nd — Reel Signature & Storytelling",
+      category: "reels",
+      video: "Images/v1.mp4",
+      poster: "Images/photo1.jpeg",
+      order_index: 1,
+      isFallback: true
+    },
+    {
+      id: "default_v2",
+      caption: "@khadija_nd — Création UGC Beauté & Mode",
+      category: "ugc",
+      video: "Images/v1.mp4",
+      poster: "Images/photo2.jpeg",
+      order_index: 2,
+      isFallback: true
+    },
+    {
+      id: "default_v3",
+      caption: "@khadija_nd — Backstage & Lifestyle",
+      category: "vlogs",
+      video: "Images/v1.mp4",
+      poster: "Images/photo1.jpeg",
+      order_index: 3,
+      isFallback: true
+    }
+  ],
+  gallery: [
+    {
+      id: "default_g1",
+      caption: "Khadija_Nd — Portrait Éditorial & Lookbook",
+      category: "mode",
+      image: "Images/photo1.jpeg",
+      order_index: 1,
+      isFallback: true
+    },
+    {
+      id: "default_g2",
+      caption: "Khadija_Nd — Beauté & Glow Signature",
+      category: "beaute",
+      image: "Images/photo2.jpeg",
+      order_index: 2,
+      isFallback: true
+    },
+    {
+      id: "default_g3",
+      caption: "Khadija_Nd — Lifestyle & Instants Authentiques",
+      category: "lifestyle",
+      image: "Images/photo1.jpeg",
+      order_index: 3,
+      isFallback: true
+    },
+    {
+      id: "default_g4",
+      caption: "Khadija_Nd — Événements & Shooting Studio",
+      category: "evenement",
+      image: "Images/photo2.jpeg",
+      order_index: 4,
+      isFallback: true
+    }
+  ]
+};
+
 function cleanSupabaseUrl(url) {
   if (!url) return "";
   let clean = url.trim();
@@ -189,13 +256,17 @@ function cleanSupabaseUrl(url) {
   return clean;
 }
 
-function withTimeout(promise, timeoutMs = 3500) {
+function withTimeout(queryOrPromise, timeoutMs = 3500) {
   let timeoutHandle;
   const timeoutPromise = new Promise((_, reject) => {
     timeoutHandle = setTimeout(() => reject(new Error("Délai de réponse Supabase dépassé")), timeoutMs);
   });
+  const wrappedPromise = Promise.resolve(queryOrPromise).then(
+    (res) => { clearTimeout(timeoutHandle); return res; },
+    (err) => { clearTimeout(timeoutHandle); throw err; }
+  );
   return Promise.race([
-    promise.finally(() => clearTimeout(timeoutHandle)),
+    wrappedPromise,
     timeoutPromise
   ]);
 }
@@ -286,7 +357,7 @@ class SupabaseService {
     try {
       const raw = localStorage.getItem(key);
       if (raw === null || raw === undefined) {
-        const initial = Array.isArray(fallback) ? [] : JSON.parse(JSON.stringify(fallback));
+        const initial = JSON.parse(JSON.stringify(fallback));
         try { localStorage.setItem(key, JSON.stringify(initial)); } catch (e) { }
         return initial;
       }
@@ -304,12 +375,11 @@ class SupabaseService {
           try { localStorage.setItem(key, JSON.stringify(parsed)); } catch (e) { }
         }
       }
-      // Nettoyage automatique de toutes photos de démonstration
+      // Nettoyage automatique des anciennes photos de démonstration (IDs g1..g10)
       if (key === SUPABASE_STORAGE_KEYS.localGallery && Array.isArray(parsed)) {
         const cleaned = parsed.filter(item => {
           if (!item) return false;
           if (item.id && (/^g([1-9]|10)$/).test(String(item.id))) return false;
-          if (item.image && (item.image === 'Images/photo1.jpeg' || item.image === 'Images/photo2.jpeg')) return false;
           return true;
         });
         if (cleaned.length !== parsed.length) {
@@ -317,9 +387,9 @@ class SupabaseService {
           try { localStorage.setItem(key, JSON.stringify(parsed)); } catch (e) { }
         }
       }
-      return (parsed !== null && parsed !== undefined) ? parsed : (Array.isArray(fallback) ? [] : fallback);
+      return (parsed !== null && parsed !== undefined) ? parsed : JSON.parse(JSON.stringify(fallback));
     } catch (e) {
-      return Array.isArray(fallback) ? [] : JSON.parse(JSON.stringify(fallback));
+      return JSON.parse(JSON.stringify(fallback));
     }
   }
 
@@ -569,6 +639,22 @@ class SupabaseService {
   // ==================================================================
   // 1. VIDÉOS & REELS (CRUD + REORDER)
   // ==================================================================
+  getDefaultContents() {
+    return DEFAULT_HOME_MEDIA.contents.map(item => ({ ...item }));
+  }
+
+  getDefaultGallery() {
+    return DEFAULT_HOME_MEDIA.gallery.map(item => ({ ...item }));
+  }
+
+  getDefaultCollabs() {
+    return INITIAL_FALLBACK_DATA.collabs.map(item => ({ ...item }));
+  }
+
+  getDefaultPacks() {
+    return INITIAL_FALLBACK_DATA.packs.map(item => ({ ...item }));
+  }
+
   async getContents() {
     if (this.isConfigured()) {
       try {
@@ -731,7 +817,7 @@ class SupabaseService {
 
         const { data, error } = await withTimeout(query, 2800);
 
-        if (!error && Array.isArray(data) && data.length > 0) {
+        if (!error && Array.isArray(data)) {
           const list = data.map(item => ({
             id: item.id,
             caption: item.caption || "Univers Khadija_Nd",
@@ -881,7 +967,7 @@ class SupabaseService {
 
         const { data, error } = await withTimeout(query, 2800);
 
-        if (!error && Array.isArray(data) && data.length > 0) {
+        if (!error && Array.isArray(data)) {
           const list = data.map(item => ({
             id: item.id,
             name: item.name,
