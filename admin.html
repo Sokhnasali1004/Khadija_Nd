@@ -14,7 +14,7 @@
 
   <!-- Supabase JS Client v2 -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="supabase-client.js"></script>
+  <script src="supabase-client.js?v=2.5"></script>
 
   <style>
     /* =========================================================
@@ -2155,6 +2155,8 @@
                       <button type="button" class="quick-url-tag"
                         data-sample="https://www.youtube.com/watch?v=dQw4w9WgXcQ">YouTube Vidéo 🎬</button>
                       <button type="button" class="quick-url-tag"
+                        data-sample="https://www.tiktok.com/@tiktok/video/7106594312292453678">TikTok Vidéo 🎵</button>
+                      <button type="button" class="quick-url-tag"
                         data-sample="https://media.w3.org/2010/05/sintel/trailer.mp4">Fichier MP4 Direct 📹</button>
                     </div>
                   </div>
@@ -3546,7 +3548,7 @@
           icon: '📱',
           id: id,
           url: url,
-          embedUrl: `https://www.youtube.com/embed/${id}?autoplay=1&rel=0&playsinline=1`,
+          embedUrl: `https://www.youtube.com/embed/${id}?autoplay=1&mute=1&rel=0&playsinline=1`,
           previewEmbedUrl: `https://www.youtube.com/embed/${id}?rel=0&playsinline=1`,
           thumbUrl: `https://img.youtube.com/vi/${id}/hqdefault.jpg`,
           isVertical: true
@@ -3563,27 +3565,44 @@
           icon: '🎬',
           id: id,
           url: url,
-          embedUrl: `https://www.youtube.com/embed/${id}?autoplay=1&rel=0&playsinline=1`,
+          embedUrl: `https://www.youtube.com/embed/${id}?autoplay=1&mute=1&rel=0&playsinline=1`,
           previewEmbedUrl: `https://www.youtube.com/embed/${id}?rel=0&playsinline=1`,
           thumbUrl: `https://img.youtube.com/vi/${id}/hqdefault.jpg`,
           isVertical: false
         };
       }
 
-      // 3. TikTok (tiktok.com/@user/video/ID ou vm.tiktok.com)
-      const tiktokMatch = url.match(/tiktok\.com\/(?:@[\w.-]+\/video\/|v\/|embed\/v2\/)(\d+)/i);
-      if (tiktokMatch) {
-        const id = tiktokMatch[1];
+      // 3. TikTok (tiktok.com/@user/video/ID, /v/ID, /player/v1/ID ou vm.tiktok.com)
+      const tiktokIdMatch = url.match(/(?:video\/|v\/|player\/v1\/|embed\/v2\/)(\d{15,22})/i) ||
+        (url.includes('tiktok.com') && url.match(/(\d{18,21})/));
+      if (tiktokIdMatch) {
+        const id = tiktokIdMatch[1];
         return {
           type: 'tiktok',
           label: 'TikTok Vidéo',
           icon: '🎵',
           id: id,
           url: url,
-          embedUrl: `https://www.tiktok.com/embed/v2/${id}`,
-          previewEmbedUrl: `https://www.tiktok.com/embed/v2/${id}`,
+          embedUrl: `https://www.tiktok.com/player/v1/${id}?autoplay=1&muted=1&description=1`,
+          previewEmbedUrl: `https://www.tiktok.com/player/v1/${id}?description=1`,
           thumbUrl: null,
           isVertical: true
+        };
+      }
+
+      // Détection des liens TikTok mobiles raccourcis (vm.tiktok.com, vt.tiktok.com, tiktok.com/t/)
+      const isShortTikTok = /^(https?:\/\/)?(vm\.tiktok\.com|vt\.tiktok\.com|www\.tiktok\.com\/t)\/[a-zA-Z0-9_-]+/i.test(url);
+      if (isShortTikTok) {
+        return {
+          type: 'tiktok_short',
+          label: 'Lien TikTok Mobile',
+          icon: '📱',
+          url: url,
+          embedUrl: url,
+          previewEmbedUrl: url,
+          thumbUrl: null,
+          isVertical: true,
+          isShort: true
         };
       }
 
@@ -3717,6 +3736,20 @@
         stageEl.className = "preview-player-stage ratio-16-9";
       }
 
+      if (parsed.type === 'tiktok_short') {
+        stageEl.className = "preview-player-stage ratio-9-16";
+        stageEl.innerHTML = `
+          <div style="color:rgba(255,255,255,0.95); text-align:center; padding:28px 16px; font-size:0.85rem; line-height:1.5;">
+            <div style="font-size:2.4rem; margin-bottom:10px;">📱</div>
+            <strong style="color:var(--gold-400); font-size:0.95rem;">Lien TikTok mobile détecté</strong>
+            <p style="font-size:0.8rem; opacity:0.85; margin:10px 0 16px;">TikTok bloque l'intégration directe des liens raccourcis (<code>vm.tiktok.com</code> ou <code>/t/</code>).<br>Ouvrez ce lien dans votre navigateur et copiez l'URL complète affichée dans la barre d'adresse (<code>https://www.tiktok.com/@.../video/...</code>).</p>
+            <a href="${parsed.url}" target="_blank" class="quick-url-tag" style="display:inline-block; text-decoration:none; padding:8px 16px; background:var(--rose-600); color:#FFF; font-weight:700; border-radius:20px;">
+              Ouvrir dans le navigateur pour copier l'URL complète ↗
+            </a>
+          </div>`;
+        return;
+      }
+
       if (parsed.type === 'youtube_shorts' || parsed.type === 'youtube' || parsed.type === 'vimeo' || parsed.type === 'googledrive' || parsed.type === 'tiktok' || parsed.type === 'instagram') {
         const iframe = document.createElement('iframe');
         iframe.src = autoplay ? parsed.embedUrl : parsed.previewEmbedUrl;
@@ -3797,12 +3830,17 @@
         const parsed = parseVideoLink(url);
         if (parsed) {
           if (badgeEl) {
-            badgeEl.className = "preview-status-badge ready";
-            badgeEl.innerHTML = `<span>🟢</span> <span>Prêt à visualiser — ${parsed.icon} ${parsed.label}</span>`;
+            if (parsed.type === 'tiktok_short') {
+              badgeEl.className = "preview-status-badge waiting";
+              badgeEl.innerHTML = `<span>📱</span> <span>Lien TikTok mobile — Ouvrez-le pour copier le lien complet</span>`;
+            } else {
+              badgeEl.className = "preview-status-badge ready";
+              badgeEl.innerHTML = `<span>🟢</span> <span>Prêt à visualiser — ${parsed.icon} ${parsed.label}</span>`;
+            }
           }
           renderVideoInStage(parsed, stageEl, false);
           if (fsBtn) {
-            fsBtn.style.display = "inline-flex";
+            fsBtn.style.display = parsed.type === 'tiktok_short' ? "none" : "inline-flex";
             fsBtn.onclick = () => showMediaPreview("Aperçu : " + parsed.label, url, true);
           }
         } else {
@@ -3840,8 +3878,13 @@
         const parsed = parseVideoLink(url);
         if (parsed) {
           if (badgeEl) {
-            badgeEl.className = "preview-status-badge ready";
-            badgeEl.innerHTML = `<span>🟢</span> <span>Prêt à visualiser — ${parsed.icon} ${parsed.label}</span>`;
+            if (parsed.type === 'tiktok_short') {
+              badgeEl.className = "preview-status-badge waiting";
+              badgeEl.innerHTML = `<span>📱</span> <span>Lien TikTok mobile — nécessite le lien complet</span>`;
+            } else {
+              badgeEl.className = "preview-status-badge ready";
+              badgeEl.innerHTML = `<span>🟢</span> <span>Prêt à visualiser — ${parsed.icon} ${parsed.label}</span>`;
+            }
           }
           renderVideoInStage(parsed, stageEl, false);
         } else {
@@ -3933,7 +3976,10 @@
       container.innerHTML = "";
 
       if (filtered.length === 0) {
-        container.innerHTML = '<div style="text-align:center; padding:36px 16px; color:var(--text-muted); font-size:0.88rem;"><div style="font-size:1.6rem; margin-bottom:6px; opacity:0.6;">🎬</div>Aucune vidéo trouvée.</div>';
+        const emptyMsg = cachedContents.length === 0
+          ? 'Aucune vidéo ajoutée — les vidéos par défaut (<code>Images/v1.mp4</code>) sont affichées sur l\'accueil.'
+          : 'Aucune vidéo trouvée.';
+        container.innerHTML = `<div style="text-align:center; padding:36px 16px; color:var(--text-muted); font-size:0.88rem;"><div style="font-size:1.6rem; margin-bottom:6px; opacity:0.6;">🎬</div>${emptyMsg}</div>`;
         return;
       }
 
@@ -4064,6 +4110,10 @@
           notify("Le format du lien n'est pas reconnu. Vérifiez l'adresse saisie.");
           return;
         }
+        if (parsed.type === 'tiktok_short') {
+          notify("Pour TikTok, ouvrez le lien dans votre navigateur et copiez l'adresse complète (tiktok.com/@nom/video/...).");
+          return;
+        }
         videoSrc = urlInput;
       } else {
         if (fileInput.files.length === 0) {
@@ -4140,7 +4190,10 @@
       container.innerHTML = "";
 
       if (filtered.length === 0) {
-        container.innerHTML = '<div style="text-align:center; padding:36px 16px; color:var(--text-muted); font-size:0.88rem;"><div style="font-size:1.6rem; margin-bottom:6px; opacity:0.6;">🖼️</div>Aucune photo trouvée.</div>';
+        const emptyMsg = cachedGallery.length === 0
+          ? 'Aucune photo ajoutée — les photos par défaut (<code>photo1.jpeg</code>, <code>photo2.jpeg</code>) sont affichées sur l\'accueil.'
+          : 'Aucune photo trouvée.';
+        container.innerHTML = `<div style="text-align:center; padding:36px 16px; color:var(--text-muted); font-size:0.88rem;"><div style="font-size:1.6rem; margin-bottom:6px; opacity:0.6;">🖼️</div>${emptyMsg}</div>`;
         return;
       }
 
@@ -4995,8 +5048,9 @@
         if (parsed && (parsed.type === 'youtube' || parsed.type === 'youtube_shorts' || parsed.type === 'vimeo' || parsed.type === 'googledrive' || parsed.type === 'tiktok' || parsed.type === 'instagram')) {
           const iframe = document.createElement('iframe');
           iframe.src = parsed.embedUrl;
-          iframe.allow = "autoplay; fullscreen; encrypted-media; picture-in-picture";
+          iframe.allow = "accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share";
           iframe.allowFullscreen = true;
+          iframe.setAttribute('allowfullscreen', '');
           iframe.style.position = "absolute";
           iframe.style.top = "0";
           iframe.style.left = "0";
